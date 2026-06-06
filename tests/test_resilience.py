@@ -122,6 +122,38 @@ class TestForecast(unittest.TestCase):
         self.assertTrue(fc.status.errors)
 
 
+class TestIndicators(unittest.TestCase):
+    def _price(self, n=120):
+        from datetime import date, timedelta
+
+        from stock_report.core.models import PricePoint
+
+        pts, d, base = [], date(2025, 1, 1), 100.0
+        for i in range(n):
+            base *= 1.002 if i % 5 else 0.99
+            pts.append(PricePoint(date=d + timedelta(days=i), close=base,
+                                  high=base * 1.01, low=base * 0.99))
+        return PriceData(points=pts)
+
+    def test_compute_indicators(self):
+        from stock_report.analysis.indicators import compute
+
+        t = compute(self._price())
+        self.assertTrue(t.status.ok)
+        self.assertEqual(len(t.k), len(t.dates))
+        # KD 介於 0~100
+        kvals = [v for v in t.k if v is not None]
+        self.assertTrue(all(0 <= v <= 100 for v in kvals))
+        rvals = [v for v in t.rsi if v is not None]
+        self.assertTrue(all(0 <= v <= 100 for v in rvals))
+
+    def test_insufficient_no_crash(self):
+        from stock_report.analysis.indicators import compute
+
+        t = compute(self._price(n=10))
+        self.assertFalse(t.status.ok)
+
+
 class TestRelevance(unittest.TestCase):
     def setUp(self):
         self.p = StockProfile(stock_id="1605", company_name="華新",

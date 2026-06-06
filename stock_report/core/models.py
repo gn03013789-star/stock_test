@@ -61,6 +61,8 @@ class PricePoint:
     date: date
     close: float
     volume: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
 
 
 @dataclass
@@ -200,6 +202,24 @@ class EarningsCallInfo:
 
 
 # --------------------------------------------------------------------------- #
+# 技術指標（KD / MACD / RSI）
+# --------------------------------------------------------------------------- #
+@dataclass
+class Technical:
+    dates: List[date] = field(default_factory=list)
+    # MACD
+    dif: List[Optional[float]] = field(default_factory=list)
+    dea: List[Optional[float]] = field(default_factory=list)
+    macd_hist: List[Optional[float]] = field(default_factory=list)
+    # KD（隨機指標）
+    k: List[Optional[float]] = field(default_factory=list)
+    d: List[Optional[float]] = field(default_factory=list)
+    # RSI
+    rsi: List[Optional[float]] = field(default_factory=list)
+    status: SourceStatus = field(default_factory=SourceStatus)
+
+
+# --------------------------------------------------------------------------- #
 # 股價預測（線性回歸趨勢 + 蒙地卡羅波動率錐）
 # --------------------------------------------------------------------------- #
 @dataclass
@@ -237,6 +257,9 @@ class Report:
     # 股價預測
     forecast: Optional["ForecastResult"] = None
     forecast_insight: str = ""
+    # 技術指標
+    technical: Optional["Technical"] = None
+    technical_insight: str = ""
     # 美股專屬（台股為 None）
     us_financials: Optional["UsFinancials"] = None
     earnings_call: Optional["EarningsCallInfo"] = None

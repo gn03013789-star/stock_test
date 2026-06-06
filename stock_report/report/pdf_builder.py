@@ -189,6 +189,18 @@ def _section_price(story, report: Report, st, Image, Spacer, Table, TableStyle):
         story.append(img)
     story.append(Spacer(1, 6))
 
+    # 技術指標子區塊（KD / MACD / RSI）
+    tech = report.technical
+    if tech is not None and tech.status.ok:
+        story.append(Paragraph("技術指標（MACD／KD／RSI）", st["h2"]))
+        if report.technical_insight:
+            story.append(Paragraph(_esc(report.technical_insight), st["body"]))
+            story.append(Spacer(1, 4))
+        timg = _img(charts.technical_chart(tech), Image, width=15 * cm)
+        if timg:
+            story.append(timg)
+        story.append(Spacer(1, 6))
+
 
 def _section_forecast(story, report: Report, st, Image, Spacer):
     from reportlab.platypus import Paragraph

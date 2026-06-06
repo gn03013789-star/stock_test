@@ -9,7 +9,7 @@ import io
 import logging
 from typing import List, Optional
 
-from ..core.models import EpsData, ForecastResult, PriceData, RevenueData
+from ..core.models import EpsData, ForecastResult, PriceData, RevenueData, Technical
 from . import fonts
 
 log = logging.getLogger(__name__)
@@ -181,6 +181,57 @@ def forecast_chart(price: PriceData, fc: ForecastResult,
     ax.tick_params(labelsize=8)
     ax.grid(True, alpha=0.25)
     ax.legend(fontsize=7, loc="best")
+    fig.autofmt_xdate()
+    return _save(fig)
+
+
+def technical_chart(tech: Technical, history_days: int = 120) -> Optional[bytes]:
+    """MACD / KD / RSI 三合一堆疊圖。"""
+    if not tech or not tech.status.ok or not tech.dates:
+        return None
+    _ensure_mpl()
+    import matplotlib.pyplot as plt
+
+    s = slice(-history_days, None)
+    x = tech.dates[s]
+
+    fig, (ax1, ax2, ax3) = plt.subplots(
+        3, 1, figsize=(8, 7.2), sharex=True,
+        gridspec_kw={"hspace": 0.25})
+
+    # MACD
+    dif, dea, hist = tech.dif[s], tech.dea[s], tech.macd_hist[s]
+    colors = ["#cf222e" if (h or 0) >= 0 else "#1a7f37" for h in hist]
+    ax1.bar(x, [h or 0 for h in hist], color=colors, alpha=0.5, width=1.0)
+    ax1.plot(x, dif, color="#1f6feb", linewidth=1.0, label="DIF")
+    ax1.plot(x, dea, color="#fb8500", linewidth=1.0, label="DEA")
+    ax1.axhline(0, color="#999", linewidth=0.6)
+    ax1.set_title("MACD（DIF／DEA／柱狀）", fontsize=11)
+    ax1.legend(fontsize=7, loc="upper left")
+    ax1.tick_params(labelsize=7)
+    ax1.grid(True, alpha=0.2)
+
+    # KD
+    ax2.plot(x, tech.k[s], color="#1f6feb", linewidth=1.0, label="K")
+    ax2.plot(x, tech.d[s], color="#cf222e", linewidth=1.0, label="D")
+    ax2.axhline(80, color="#cf222e", linewidth=0.5, linestyle="--")
+    ax2.axhline(20, color="#1a7f37", linewidth=0.5, linestyle="--")
+    ax2.set_ylim(0, 100)
+    ax2.set_title("KD 隨機指標（9）", fontsize=11)
+    ax2.legend(fontsize=7, loc="upper left")
+    ax2.tick_params(labelsize=7)
+    ax2.grid(True, alpha=0.2)
+
+    # RSI
+    ax3.plot(x, tech.rsi[s], color="#8338ec", linewidth=1.0, label="RSI(14)")
+    ax3.axhline(70, color="#cf222e", linewidth=0.5, linestyle="--")
+    ax3.axhline(30, color="#1a7f37", linewidth=0.5, linestyle="--")
+    ax3.set_ylim(0, 100)
+    ax3.set_title("RSI 相對強弱指標（14）", fontsize=11)
+    ax3.legend(fontsize=7, loc="upper left")
+    ax3.tick_params(labelsize=7)
+    ax3.grid(True, alpha=0.2)
+
     fig.autofmt_xdate()
     return _save(fig)
 

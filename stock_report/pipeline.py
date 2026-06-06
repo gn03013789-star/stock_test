@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from .analysis import forecast as forecast_mod
+from .analysis import indicators as indicators_mod
 from .analysis import insights
 from .core.models import (
     EpsData,
@@ -52,6 +53,10 @@ def build_report(query: str, progress: ProgressCb = None,
     _step("計算股價情境模擬…", 0.3)
     fc = _safe(lambda: forecast_mod.forecast(price, horizon_days=forecast_days), None)
     fc_insight = forecast_mod.insight(fc, profile.currency) if fc else ""
+
+    _step("計算技術指標…", 0.33)
+    tech = _safe(lambda: indicators_mod.compute(price), None)
+    tech_insight = indicators_mod.insight(tech) if tech else ""
 
     _step("查詢營收…", 0.4)
     revenue = _safe(lambda: revenue_mod.get_revenue(profile), None) or RevenueData()
@@ -102,6 +107,8 @@ def build_report(query: str, progress: ProgressCb = None,
         eps_insight=insights.eps_insight(eps),
         forecast=fc,
         forecast_insight=fc_insight,
+        technical=tech,
+        technical_insight=tech_insight,
         us_financials=us_financials,
         earnings_call=earnings_call,
         references=references,

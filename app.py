@@ -280,10 +280,13 @@ def render_preview(report, pdf):
     m2[0].metric("新聞", f"{len(report.news.items)} 則")
     m2[1].metric("評等", f"{len(report.rating.items)} 則")
 
-    labels = ["📊 股價", "🔮 預測", "💰 營收", "📈 EPS", "📰 新聞", "🎯 目標價/評等"]
+    L_PRICE, L_TECH, L_FC = "📊 股價", "📐 技術指標", "🔮 預測"
+    L_REV, L_EPS, L_NEWS, L_RATE = "💰 營收", "📈 EPS", "📰 新聞", "🎯 目標價/評等"
+    L_SEC, L_CALL, L_REF = "🏦 財務摘要(SEC)", "📞 法說會", "🔗 延伸連結"
+    labels = [L_PRICE, L_TECH, L_FC, L_REV, L_EPS, L_NEWS, L_RATE]
     is_us = report.us_financials is not None
     if is_us:
-        labels += ["🏦 財務摘要(SEC)", "📞 法說會", "🔗 延伸連結"]
+        labels += [L_SEC, L_CALL, L_REF]
 
     # 用 segmented_control 取代 st.tabs：選取狀態存於 session_state，
     # 重新整理/重算（例如切換預測期間、盤中自動更新）時不會跳回第一頁。
@@ -294,7 +297,7 @@ def render_preview(report, pdf):
         sel = st.session_state.get("section_nav", labels[0])
 
     # 股價
-    if sel == labels[0]:
+    if sel == L_PRICE:
         _render_live_quote(p)
         st.divider()
         if report.price.points:
@@ -313,8 +316,19 @@ def render_preview(report, pdf):
         else:
             st.warning("查無公開可得股價資料。")
 
+    # 技術指標（KD / MACD / RSI）
+    elif sel == L_TECH:
+        tech = report.technical
+        if tech is not None and tech.status.ok:
+            st.info(report.technical_insight)
+            png = charts.technical_chart(tech)
+            if png:
+                st.image(png, use_container_width=True)
+        else:
+            st.warning("查無足夠資料計算技術指標。")
+
     # 預測（情境模擬）
-    elif sel == labels[1]:
+    elif sel == L_FC:
         # 預測期間選擇（改變時觸發 rerun，會在 render_preview 頂端重算）
         st.radio("預測期間", list(HORIZON_OPTIONS.keys()),
                  index=list(HORIZON_OPTIONS.keys()).index(DEFAULT_HORIZON_LABEL),
@@ -335,7 +349,7 @@ def render_preview(report, pdf):
             st.warning("查無足夠資料進行股價情境模擬。")
 
     # 營收
-    elif sel == labels[2]:
+    elif sel == L_REV:
         if report.revenue.points:
             if report.revenue.is_quarterly:
                 st.caption("（美股以季營收呈現）")
@@ -347,7 +361,7 @@ def render_preview(report, pdf):
             st.warning("查無公開可得營收資料。")
 
     # EPS
-    elif sel == labels[3]:
+    elif sel == L_EPS:
         if report.eps.quarterly:
             st.info(report.eps_insight)
             png = charts.eps_chart(report.eps)
@@ -357,7 +371,7 @@ def render_preview(report, pdf):
             st.warning("查無公開可得 EPS 資料。")
 
     # 新聞
-    elif sel == labels[4]:
+    elif sel == L_NEWS:
         news = report.news
         if news.used_industry_fallback:
             st.caption(f"個股新聞較少，已補入「{p.industry_name}」產業近期新聞。")
@@ -380,7 +394,7 @@ def render_preview(report, pdf):
             st.warning("查無公開可得新聞資料。")
 
     # 目標價/評等
-    elif sel == labels[5]:
+    elif sel == L_RATE:
         rb = report.rating
         if rb.insufficient or not rb.items:
             st.warning("查無一致公開資料，僅整理公開可得資訊。")
@@ -398,7 +412,7 @@ def render_preview(report, pdf):
             st.caption("＊以上為公開新聞整理之法人看法與目標價，非完整研究報告，僅供參考。")
 
     # ---- 美股專屬區塊 ----
-    elif is_us and sel == labels[6]:  # 財務摘要 (SEC)
+    elif is_us and sel == L_SEC:  # 財務摘要 (SEC)
         fin = report.us_financials
         if fin.rows:
             frows = [{
@@ -418,7 +432,7 @@ def render_preview(report, pdf):
                 tag = "（財報發布）" if f.is_earnings else ""
                 st.markdown(f"- {f.date}　[{f.title}{tag}]({f.url})")
 
-    elif is_us and sel == labels[7]:  # 法說會
+    elif is_us and sel == L_CALL:  # 法說會
         ec = report.earnings_call
         if ec.next_date:
             st.metric("下次財報／法說會預估日期", ec.next_date)
@@ -436,7 +450,7 @@ def render_preview(report, pdf):
         if not (ec.next_date or ec.press_releases or ec.transcript_links):
             st.warning("查無公開可得法說會資訊。")
 
-    elif is_us and sel == labels[8]:  # 延伸連結
+    elif is_us and sel == L_REF:  # 延伸連結
         st.caption("第三方財報網站直達連結（資料多為付費或受版權保護，僅供導引，"
                    "本報告未擷取其內容）。")
         for label, url in report.references:

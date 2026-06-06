@@ -65,6 +65,8 @@ def _from_yfinance(profile: StockProfile) -> List[PricePoint]:
             d = idx.date() if hasattr(idx, "date") else idx
             close = row.get("Close")
             vol = row.get("Volume")
+            hi = row.get("High")
+            lo = row.get("Low")
             if close is None or close != close:  # NaN 檢查
                 continue
             points.append(
@@ -72,6 +74,8 @@ def _from_yfinance(profile: StockProfile) -> List[PricePoint]:
                     date=d,
                     close=float(close),
                     volume=float(vol) if vol == vol else None,
+                    high=float(hi) if hi is not None and hi == hi else None,
+                    low=float(lo) if lo is not None and lo == lo else None,
                 )
             )
         return points
@@ -102,7 +106,15 @@ def _from_twse(stock_id: str) -> List[PricePoint]:
                 d = date(y, int(roc[1]), int(roc[2]))
                 close = float(row[6].replace(",", ""))
                 vol = float(row[1].replace(",", "")) if row[1] else None
-                points.append(PricePoint(date=d, close=close, volume=vol))
+
+                def _f(v):
+                    try:
+                        return float(v.replace(",", ""))
+                    except (ValueError, AttributeError):
+                        return None
+
+                points.append(PricePoint(date=d, close=close, volume=vol,
+                                         high=_f(row[4]), low=_f(row[5])))
             except (ValueError, IndexError):
                 continue
     points.sort(key=lambda p: p.date)
