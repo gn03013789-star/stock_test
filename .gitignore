@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# 執行期產物
+.cache/
+output/
+*.pdf
+
+# 機密（切勿提交）
+.streamlit/secrets.toml
+
+# 編輯器
+.vscode/
+.idea/
+.DS_Store
