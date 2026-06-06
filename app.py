@@ -17,6 +17,7 @@ import streamlit as st
 from stock_report.analysis import forecast as forecast_mod
 from stock_report.config import DISCLAIMER
 from stock_report.core.universe import top100
+from stock_report.datasources import quote as quote_mod
 from stock_report.pipeline import build_report
 from stock_report.report import charts
 from stock_report.report.pdf_builder import build_pdf
@@ -59,6 +60,36 @@ def _revenue_metric(report):
     else:
         delta = None
     return label, val, delta
+
+
+def _render_quote_body(profile, open_now: bool):
+    """顯示最新報價 + 成交量（盤中/收盤皆用此呈現）。"""
+    q = quote_mod.get_quote(profile)
+    if not q:
+        st.caption("（即時報價暫時無法取得）")
+        return
+    cols = st.columns(3)
+    cols[0].metric("最新價", f"{q.price:,.2f}",
+                   delta=f"{q.change:+,.2f}（{q.change_pct:+.2f}%）")
+    cols[1].metric("成交量（股）", f"{q.volume:,.0f}")
+    rng = (f"{q.day_low:,.2f} ~ {q.day_high:,.2f}"
+           if q.day_low and q.day_high else "—")
+    cols[2].metric("當日區間", rng)
+    tag = "🟢 盤中即時（每 10 秒更新）" if open_now else "🔴 已收盤，顯示最後成交"
+    st.caption(f"{tag}　·　更新 {q.asof}　·　資料來源 Yahoo，可能延遲約 15 分鐘")
+
+
+@st.fragment(run_every="10s")
+def _live_quote_fragment(profile):
+    _render_quote_body(profile, open_now=True)
+
+
+def _render_live_quote(profile):
+    """盤中：每 10 秒自動更新；收盤：顯示最後成交（不自動刷新）。"""
+    if quote_mod.is_market_open(profile):
+        _live_quote_fragment(profile)
+    else:
+        _render_quote_body(profile, open_now=False)
 
 
 def _eps_metric(report):
@@ -253,20 +284,30 @@ def render_preview(report, pdf):
     is_us = report.us_financials is not None
     if is_us:
         labels += ["🏦 財務摘要(SEC)", "📞 法說會", "🔗 延伸連結"]
-    tabs = st.tabs(labels)
+
+    # 用 segmented_control 取代 st.tabs：選取狀態存於 session_state，
+    # 重新整理/重算（例如切換預測期間、盤中自動更新）時不會跳回第一頁。
+    if st.session_state.get("section_nav") not in labels:
+        st.session_state["section_nav"] = labels[0]
+    sel = st.segmented_control("檢視區塊", labels, key="section_nav")
+    if not sel:
+        sel = st.session_state.get("section_nav", labels[0])
 
     # 股價
-    with tabs[0]:
+    if sel == labels[0]:
+        _render_live_quote(p)
+        st.divider()
         if report.price.points:
             st.info(report.price_insight)
-            png = charts.price_chart(report.price, title="近一年股價走勢（收盤價／成交量）")
+            png = charts.price_chart(report.price,
+                                     title="近一年股價走勢（日線／週月均線／成交量）")
             if png:
                 st.image(png, use_container_width=True)
         else:
             st.warning("查無公開可得股價資料。")
 
     # 預測（情境模擬）
-    with tabs[1]:
+    elif sel == labels[1]:
         # 預測期間選擇（改變時觸發 rerun，會在 render_preview 頂端重算）
         st.radio("預測期間", list(HORIZON_OPTIONS.keys()),
                  index=list(HORIZON_OPTIONS.keys()).index(DEFAULT_HORIZON_LABEL),
@@ -287,7 +328,7 @@ def render_preview(report, pdf):
             st.warning("查無足夠資料進行股價情境模擬。")
 
     # 營收
-    with tabs[2]:
+    elif sel == labels[2]:
         if report.revenue.points:
             if report.revenue.is_quarterly:
                 st.caption("（美股以季營收呈現）")
@@ -299,7 +340,7 @@ def render_preview(report, pdf):
             st.warning("查無公開可得營收資料。")
 
     # EPS
-    with tabs[3]:
+    elif sel == labels[3]:
         if report.eps.quarterly:
             st.info(report.eps_insight)
             png = charts.eps_chart(report.eps)
@@ -309,7 +350,7 @@ def render_preview(report, pdf):
             st.warning("查無公開可得 EPS 資料。")
 
     # 新聞
-    with tabs[4]:
+    elif sel == labels[4]:
         news = report.news
         if news.used_industry_fallback:
             st.caption(f"個股新聞較少，已補入「{p.industry_name}」產業近期新聞。")
@@ -332,7 +373,7 @@ def render_preview(report, pdf):
             st.warning("查無公開可得新聞資料。")
 
     # 目標價/評等
-    with tabs[5]:
+    elif sel == labels[5]:
         rb = report.rating
         if rb.insufficient or not rb.items:
             st.warning("查無一致公開資料，僅整理公開可得資訊。")
@@ -349,54 +390,50 @@ def render_preview(report, pdf):
             st.dataframe(rows, use_container_width=True, hide_index=True)
             st.caption("＊以上為公開新聞整理之法人看法與目標價，非完整研究報告，僅供參考。")
 
-    # ---- 美股專屬分頁 ----
-    if is_us:
-        # 財務摘要 (SEC)
-        with tabs[6]:
-            fin = report.us_financials
-            if fin.rows:
-                frows = [{
-                    "會計年度": r.period,
-                    "營收(百萬USD)": f"{r.revenue:,.0f}" if r.revenue is not None else "—",
-                    "淨利(百萬USD)": f"{r.net_income:,.0f}" if r.net_income is not None else "—",
-                    "稀釋EPS": f"{r.eps:.2f}" if r.eps is not None else "—",
-                    "毛利率": f"{r.gross_margin:.1f}%" if r.gross_margin is not None else "—",
-                } for r in fin.rows]
-                st.dataframe(frows, use_container_width=True, hide_index=True)
-                st.caption(f"資料來源：SEC EDGAR XBRL（CIK {fin.cik}），官方公開申報。")
-            else:
-                st.warning("查無公開可得 SEC 財報數據。")
-            if fin.filings:
-                st.markdown("**近期申報文件**")
-                for f in fin.filings[:8]:
-                    tag = "（財報發布）" if f.is_earnings else ""
-                    st.markdown(f"- {f.date}　[{f.title}{tag}]({f.url})")
+    # ---- 美股專屬區塊 ----
+    elif is_us and sel == labels[6]:  # 財務摘要 (SEC)
+        fin = report.us_financials
+        if fin.rows:
+            frows = [{
+                "會計年度": r.period,
+                "營收(百萬USD)": f"{r.revenue:,.0f}" if r.revenue is not None else "—",
+                "淨利(百萬USD)": f"{r.net_income:,.0f}" if r.net_income is not None else "—",
+                "稀釋EPS": f"{r.eps:.2f}" if r.eps is not None else "—",
+                "毛利率": f"{r.gross_margin:.1f}%" if r.gross_margin is not None else "—",
+            } for r in fin.rows]
+            st.dataframe(frows, use_container_width=True, hide_index=True)
+            st.caption(f"資料來源：SEC EDGAR XBRL（CIK {fin.cik}），官方公開申報。")
+        else:
+            st.warning("查無公開可得 SEC 財報數據。")
+        if fin.filings:
+            st.markdown("**近期申報文件**")
+            for f in fin.filings[:8]:
+                tag = "（財報發布）" if f.is_earnings else ""
+                st.markdown(f"- {f.date}　[{f.title}{tag}]({f.url})")
 
-        # 法說會
-        with tabs[7]:
-            ec = report.earnings_call
-            if ec.next_date:
-                st.metric("下次財報／法說會預估日期", ec.next_date)
-            if ec.press_releases:
-                st.markdown("**財報新聞稿（SEC 8-K，官方公開全文）**")
-                for f in ec.press_releases:
-                    st.markdown(f"- {f.date}：[{f.url}]({f.url})")
-            if ec.transcript_links:
-                st.markdown("**電話會議逐字稿（公開新聞連結，非全文）**")
-                for it in ec.transcript_links:
-                    d = f"{it.publish_date:%Y-%m-%d}" if it.publish_date else ""
-                    st.markdown(f"- [{it.title}]({it.url})　_{it.source}　{d}_")
-                    if it.summary_zh:
-                        st.caption(f"　中譯：{it.summary_zh}")
-            if not (ec.next_date or ec.press_releases or ec.transcript_links):
-                st.warning("查無公開可得法說會資訊。")
+    elif is_us and sel == labels[7]:  # 法說會
+        ec = report.earnings_call
+        if ec.next_date:
+            st.metric("下次財報／法說會預估日期", ec.next_date)
+        if ec.press_releases:
+            st.markdown("**財報新聞稿（SEC 8-K，官方公開全文）**")
+            for f in ec.press_releases:
+                st.markdown(f"- {f.date}：[{f.url}]({f.url})")
+        if ec.transcript_links:
+            st.markdown("**電話會議逐字稿（公開新聞連結，非全文）**")
+            for it in ec.transcript_links:
+                d = f"{it.publish_date:%Y-%m-%d}" if it.publish_date else ""
+                st.markdown(f"- [{it.title}]({it.url})　_{it.source}　{d}_")
+                if it.summary_zh:
+                    st.caption(f"　中譯：{it.summary_zh}")
+        if not (ec.next_date or ec.press_releases or ec.transcript_links):
+            st.warning("查無公開可得法說會資訊。")
 
-        # 延伸連結
-        with tabs[8]:
-            st.caption("第三方財報網站直達連結（資料多為付費或受版權保護，僅供導引，"
-                       "本報告未擷取其內容）。")
-            for label, url in report.references:
-                st.markdown(f"- **{label}**：[{url}]({url})")
+    elif is_us and sel == labels[8]:  # 延伸連結
+        st.caption("第三方財報網站直達連結（資料多為付費或受版權保護，僅供導引，"
+                   "本報告未擷取其內容）。")
+        for label, url in report.references:
+            st.markdown(f"- **{label}**：[{url}]({url})")
 
 
 if "report" in st.session_state:

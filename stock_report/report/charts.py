@@ -48,7 +48,24 @@ def price_chart(data: PriceData, title: str = "股價走勢") -> Optional[bytes]
     closes = [p.close for p in pts]
 
     fig, ax = plt.subplots(figsize=(8, 3.6))
-    ax.plot(dates, closes, color="#1f6feb", linewidth=1.3, label="收盤價")
+    ax.plot(dates, closes, color="#1f6feb", linewidth=1.3, label="日收盤")
+
+    # 週/月趨勢（移動平均：週=5 日、月=20 日）
+    def _ma(values, n):
+        out = []
+        for i in range(len(values)):
+            if i + 1 < n:
+                out.append(None)
+            else:
+                out.append(sum(values[i + 1 - n:i + 1]) / n)
+        return out
+
+    if len(closes) >= 5:
+        ax.plot(dates, _ma(closes, 5), color="#fb8500", linewidth=1.0,
+                label="週均線(5MA)")
+    if len(closes) >= 20:
+        ax.plot(dates, _ma(closes, 20), color="#8338ec", linewidth=1.0,
+                label="月均線(20MA)")
 
     # 成交量副軸
     vols = [p.volume for p in pts]
@@ -72,6 +89,7 @@ def price_chart(data: PriceData, title: str = "股價走勢") -> Optional[bytes]
     ax.set_ylabel("價格", fontsize=9)
     ax.tick_params(labelsize=8)
     ax.grid(True, alpha=0.25)
+    ax.legend(fontsize=7, loc="upper left")
     fig.autofmt_xdate()
     return _save(fig)
 
