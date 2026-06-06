@@ -182,7 +182,8 @@ def _section_price(story, report: Report, st, Image, Spacer, Table, TableStyle):
     story.append(Paragraph(_esc(report.price_insight), st["body"]))
     story.append(Spacer(1, 4))
     png = charts.price_chart(report.price,
-                             title="近一年股價走勢（日線／週月均線／成交量）")
+                             title="近一年股價走勢（日線／週月季均線／成交量）",
+                             ma_periods=(5, 20, 60))
     img = _img(png, Image)
     if img:
         story.append(img)

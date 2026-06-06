@@ -37,7 +37,25 @@ def _save(fig) -> bytes:
     return buf.getvalue()
 
 
-def price_chart(data: PriceData, title: str = "股價走勢") -> Optional[bytes]:
+# 均線定義：交易日數 -> (顯示名稱, 顏色)
+MA_DEFS = {
+    5: ("週線(5MA)", "#fb8500"),
+    10: ("雙週線(10MA)", "#ffb703"),
+    20: ("月線(20MA)", "#8338ec"),
+    60: ("季線(60MA)", "#1a7f37"),
+    120: ("半年線(120MA)", "#0096c7"),
+    240: ("年線(240MA)", "#d00000"),
+}
+DEFAULT_MA = (5, 20)
+
+
+def ma_label_to_period() -> dict:
+    """{顯示名稱: 交易日數}，供 UI 多選使用。"""
+    return {label: period for period, (label, _) in MA_DEFS.items()}
+
+
+def price_chart(data: PriceData, title: str = "股價走勢",
+                ma_periods=DEFAULT_MA) -> Optional[bytes]:
     if not data.points:
         return None
     _ensure_mpl()
@@ -50,7 +68,7 @@ def price_chart(data: PriceData, title: str = "股價走勢") -> Optional[bytes]
     fig, ax = plt.subplots(figsize=(8, 3.6))
     ax.plot(dates, closes, color="#1f6feb", linewidth=1.3, label="日收盤")
 
-    # 週/月趨勢（移動平均：週=5 日、月=20 日）
+    # 趨勢均線（可自選：週=5、月=20、季=60、年=240 …）
     def _ma(values, n):
         out = []
         for i in range(len(values)):
@@ -60,12 +78,10 @@ def price_chart(data: PriceData, title: str = "股價走勢") -> Optional[bytes]
                 out.append(sum(values[i + 1 - n:i + 1]) / n)
         return out
 
-    if len(closes) >= 5:
-        ax.plot(dates, _ma(closes, 5), color="#fb8500", linewidth=1.0,
-                label="週均線(5MA)")
-    if len(closes) >= 20:
-        ax.plot(dates, _ma(closes, 20), color="#8338ec", linewidth=1.0,
-                label="月均線(20MA)")
+    for n in sorted(set(ma_periods or [])):
+        if n in MA_DEFS and len(closes) >= n:
+            label, color = MA_DEFS[n]
+            ax.plot(dates, _ma(closes, n), color=color, linewidth=1.0, label=label)
 
     # 成交量副軸
     vols = [p.volume for p in pts]

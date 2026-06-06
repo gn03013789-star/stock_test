@@ -299,8 +299,15 @@ def render_preview(report, pdf):
         st.divider()
         if report.price.points:
             st.info(report.price_insight)
+            # 均線多選（預設 週+月，可加季線/年線等）
+            ma_map = charts.ma_label_to_period()
+            default_ma = [charts.MA_DEFS[n][0] for n in charts.DEFAULT_MA]
+            chosen = st.multiselect("顯示均線", list(ma_map.keys()),
+                                    default=default_ma, key="ma_sel")
+            periods = [ma_map[c] for c in chosen]
             png = charts.price_chart(report.price,
-                                     title="近一年股價走勢（日線／週月均線／成交量）")
+                                     title="近一年股價走勢（日線／均線／成交量）",
+                                     ma_periods=periods)
             if png:
                 st.image(png, use_container_width=True)
         else:
