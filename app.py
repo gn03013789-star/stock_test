@@ -29,6 +29,56 @@ def _safe_filename(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|]+', "_", name).strip() or "report"
 
 
+def _price_metric(report):
+    """股價：顯示最新收盤價 + 當日漲跌幅。"""
+    pts = report.price.points
+    if not pts:
+        return "股價（最新）", "—", None
+    last = pts[-1].close
+    delta = None
+    if len(pts) >= 2 and pts[-2].close:
+        chg = (last - pts[-2].close) / pts[-2].close * 100
+        delta = f"{chg:+.2f}%"
+    return "股價（最新收盤）", f"{last:,.2f}", delta
+
+
+def _revenue_metric(report):
+    """營收：顯示最新營收數字 + 成長幅度（優先年增 YoY，無則月/季增）。"""
+    pts = report.revenue.points
+    if not pts:
+        return "營收", "—", None
+    r = pts[-1]
+    label = "最新季營收" if report.revenue.is_quarterly else "最新月營收"
+    label += f"（{r.label}）"
+    val = f"{r.revenue:,.0f} {report.revenue.unit}"
+    if r.yoy is not None:
+        delta = f"{r.yoy:+.1f}% YoY"
+    elif r.mom is not None:
+        basis = "QoQ" if report.revenue.is_quarterly else "MoM"
+        delta = f"{r.mom:+.1f}% {basis}"
+    else:
+        delta = None
+    return label, val, delta
+
+
+def _eps_metric(report):
+    """EPS：顯示最新 EPS 數字 + 成長幅度（優先年增 YoY=前四季，無則季增 QoQ）。"""
+    q = report.eps.quarterly
+    if not q:
+        return "EPS", "—", None
+    e = q[-1]
+    label = f"最新 EPS（{e.period}）"
+    val = f"{e.eps:.2f}"
+    delta = None
+    if len(q) >= 5 and q[-5].eps:
+        yoy = (e.eps - q[-5].eps) / abs(q[-5].eps) * 100
+        delta = f"{yoy:+.1f}% YoY"
+    elif len(q) >= 2 and q[-2].eps:
+        qoq = (e.eps - q[-2].eps) / abs(q[-2].eps) * 100
+        delta = f"{qoq:+.1f}% QoQ"
+    return label, val, delta
+
+
 # layout="centered" 對手機較友善（內容置中、單欄、易讀）
 st.set_page_config(page_title="台股/美股投資分析報告", page_icon="📈",
                    layout="centered", initial_sidebar_state="collapsed")
@@ -187,11 +237,14 @@ def render_preview(report, pdf):
                        mime="application/pdf", type="primary",
                        use_container_width=True)
 
-    # 摘要狀態（手機上自動換行堆疊）
+    # 摘要狀態：顯示實際數字（手機上自動換行堆疊）
+    price_label, price_val, price_delta = _price_metric(report)
+    rev_label, rev_val, rev_delta = _revenue_metric(report)
+    eps_label, eps_val, eps_delta = _eps_metric(report)
     m = st.columns(3)
-    m[0].metric("股價", "OK" if report.price.points else "—")
-    m[1].metric("營收", "OK" if report.revenue.points else "—")
-    m[2].metric("EPS", "OK" if report.eps.quarterly else "—")
+    m[0].metric(price_label, price_val, delta=price_delta)
+    m[1].metric(rev_label, rev_val, delta=rev_delta)
+    m[2].metric(eps_label, eps_val, delta=eps_delta)
     m2 = st.columns(2)
     m2[0].metric("新聞", f"{len(report.news.items)} 則")
     m2[1].metric("評等", f"{len(report.rating.items)} 則")
