@@ -55,7 +55,7 @@ def ma_label_to_period() -> dict:
 
 
 def price_chart(data: PriceData, title: str = "股價走勢",
-                ma_periods=DEFAULT_MA) -> Optional[bytes]:
+                ma_periods=DEFAULT_MA, bollinger: bool = False) -> Optional[bytes]:
     if not data.points:
         return None
     _ensure_mpl()
@@ -82,6 +82,26 @@ def price_chart(data: PriceData, title: str = "股價走勢",
         if n in MA_DEFS and len(closes) >= n:
             label, color = MA_DEFS[n]
             ax.plot(dates, _ma(closes, n), color=color, linewidth=1.0, label=label)
+
+    # 布林通道（20 日均 ± 2 標準差）
+    if bollinger and len(closes) >= 20:
+        import statistics
+
+        nan = float("nan")
+        up, low = [], []
+        for i in range(len(closes)):
+            if i + 1 < 20:
+                up.append(nan); low.append(nan)
+            else:
+                win = closes[i - 19:i + 1]
+                m = sum(win) / 20
+                sd = statistics.pstdev(win)
+                up.append(m + 2 * sd); low.append(m - 2 * sd)
+        ax.plot(dates, up, color="#adb5bd", linewidth=0.8, linestyle="--",
+                label="布林上軌")
+        ax.plot(dates, low, color="#adb5bd", linewidth=0.8, linestyle="--",
+                label="布林下軌")
+        ax.fill_between(dates, low, up, color="#adb5bd", alpha=0.08)
 
     # 成交量副軸
     vols = [p.volume for p in pts]
@@ -185,8 +205,13 @@ def forecast_chart(price: PriceData, fc: ForecastResult,
     return _save(fig)
 
 
-def technical_chart(tech: Technical, history_days: int = 120) -> Optional[bytes]:
-    """MACD / KD / RSI 三合一堆疊圖。"""
+# 可選技術指標（顯示名稱）
+TECH_INDICATORS = ["MACD", "KD", "RSI", "OBV"]
+
+
+def technical_chart(tech: Technical, indicators=TECH_INDICATORS,
+                    history_days: int = 120) -> Optional[bytes]:
+    """依選擇繪製 MACD / KD / RSI / OBV 堆疊圖（每個指標一個面板）。"""
     if not tech or not tech.status.ok or not tech.dates:
         return None
     _ensure_mpl()
@@ -195,42 +220,49 @@ def technical_chart(tech: Technical, history_days: int = 120) -> Optional[bytes]
     s = slice(-history_days, None)
     x = tech.dates[s]
 
-    fig, (ax1, ax2, ax3) = plt.subplots(
-        3, 1, figsize=(8, 7.2), sharex=True,
-        gridspec_kw={"hspace": 0.25})
+    # 只保留有資料的指標
+    panels = []
+    for ind in indicators:
+        if ind == "OBV" and not tech.obv:
+            continue
+        if ind in TECH_INDICATORS:
+            panels.append(ind)
+    if not panels:
+        return None
 
-    # MACD
-    dif, dea, hist = tech.dif[s], tech.dea[s], tech.macd_hist[s]
-    colors = ["#cf222e" if (h or 0) >= 0 else "#1a7f37" for h in hist]
-    ax1.bar(x, [h or 0 for h in hist], color=colors, alpha=0.5, width=1.0)
-    ax1.plot(x, dif, color="#1f6feb", linewidth=1.0, label="DIF")
-    ax1.plot(x, dea, color="#fb8500", linewidth=1.0, label="DEA")
-    ax1.axhline(0, color="#999", linewidth=0.6)
-    ax1.set_title("MACD（DIF／DEA／柱狀）", fontsize=11)
-    ax1.legend(fontsize=7, loc="upper left")
-    ax1.tick_params(labelsize=7)
-    ax1.grid(True, alpha=0.2)
+    fig, axes = plt.subplots(len(panels), 1, figsize=(8, 2.4 * len(panels)),
+                             sharex=True, gridspec_kw={"hspace": 0.28})
+    if len(panels) == 1:
+        axes = [axes]
 
-    # KD
-    ax2.plot(x, tech.k[s], color="#1f6feb", linewidth=1.0, label="K")
-    ax2.plot(x, tech.d[s], color="#cf222e", linewidth=1.0, label="D")
-    ax2.axhline(80, color="#cf222e", linewidth=0.5, linestyle="--")
-    ax2.axhline(20, color="#1a7f37", linewidth=0.5, linestyle="--")
-    ax2.set_ylim(0, 100)
-    ax2.set_title("KD 隨機指標（9）", fontsize=11)
-    ax2.legend(fontsize=7, loc="upper left")
-    ax2.tick_params(labelsize=7)
-    ax2.grid(True, alpha=0.2)
-
-    # RSI
-    ax3.plot(x, tech.rsi[s], color="#8338ec", linewidth=1.0, label="RSI(14)")
-    ax3.axhline(70, color="#cf222e", linewidth=0.5, linestyle="--")
-    ax3.axhline(30, color="#1a7f37", linewidth=0.5, linestyle="--")
-    ax3.set_ylim(0, 100)
-    ax3.set_title("RSI 相對強弱指標（14）", fontsize=11)
-    ax3.legend(fontsize=7, loc="upper left")
-    ax3.tick_params(labelsize=7)
-    ax3.grid(True, alpha=0.2)
+    for ax, ind in zip(axes, panels):
+        if ind == "MACD":
+            hist = tech.macd_hist[s]
+            colors = ["#cf222e" if (h or 0) >= 0 else "#1a7f37" for h in hist]
+            ax.bar(x, [h or 0 for h in hist], color=colors, alpha=0.5, width=1.0)
+            ax.plot(x, tech.dif[s], color="#1f6feb", linewidth=1.0, label="DIF")
+            ax.plot(x, tech.dea[s], color="#fb8500", linewidth=1.0, label="DEA")
+            ax.axhline(0, color="#999", linewidth=0.6)
+            ax.set_title("MACD（DIF／DEA／柱狀）", fontsize=11)
+        elif ind == "KD":
+            ax.plot(x, tech.k[s], color="#1f6feb", linewidth=1.0, label="K")
+            ax.plot(x, tech.d[s], color="#cf222e", linewidth=1.0, label="D")
+            ax.axhline(80, color="#cf222e", linewidth=0.5, linestyle="--")
+            ax.axhline(20, color="#1a7f37", linewidth=0.5, linestyle="--")
+            ax.set_ylim(0, 100)
+            ax.set_title("KD 隨機指標（9）", fontsize=11)
+        elif ind == "RSI":
+            ax.plot(x, tech.rsi[s], color="#8338ec", linewidth=1.0, label="RSI(14)")
+            ax.axhline(70, color="#cf222e", linewidth=0.5, linestyle="--")
+            ax.axhline(30, color="#1a7f37", linewidth=0.5, linestyle="--")
+            ax.set_ylim(0, 100)
+            ax.set_title("RSI 相對強弱指標（14）", fontsize=11)
+        elif ind == "OBV":
+            ax.plot(x, tech.obv[s], color="#0096c7", linewidth=1.0, label="OBV")
+            ax.set_title("OBV 能量潮（量能）", fontsize=11)
+        ax.legend(fontsize=7, loc="upper left")
+        ax.tick_params(labelsize=7)
+        ax.grid(True, alpha=0.2)
 
     fig.autofmt_xdate()
     return _save(fig)

@@ -302,28 +302,36 @@ def render_preview(report, pdf):
         st.divider()
         if report.price.points:
             st.info(report.price_insight)
-            # 均線多選（預設 週+月，可加季線/年線等）
+            # 均線多選（預設 週+月，可加季線/年線等）+ 布林通道
             ma_map = charts.ma_label_to_period()
             default_ma = [charts.MA_DEFS[n][0] for n in charts.DEFAULT_MA]
-            chosen = st.multiselect("顯示均線", list(ma_map.keys()),
-                                    default=default_ma, key="ma_sel")
+            cc = st.columns([3, 1])
+            with cc[0]:
+                chosen = st.multiselect("顯示均線", list(ma_map.keys()),
+                                        default=default_ma, key="ma_sel")
+            with cc[1]:
+                show_boll = st.checkbox("布林通道", key="boll_sel")
             periods = [ma_map[c] for c in chosen]
             png = charts.price_chart(report.price,
                                      title="近一年股價走勢（日線／均線／成交量）",
-                                     ma_periods=periods)
+                                     ma_periods=periods, bollinger=show_boll)
             if png:
                 st.image(png, use_container_width=True)
         else:
             st.warning("查無公開可得股價資料。")
 
-    # 技術指標（KD / MACD / RSI）
+    # 技術指標（MACD / KD / RSI / OBV，可勾選）
     elif sel == L_TECH:
         tech = report.technical
         if tech is not None and tech.status.ok:
             st.info(report.technical_insight)
-            png = charts.technical_chart(tech)
+            picked = st.multiselect("顯示指標", charts.TECH_INDICATORS,
+                                    default=charts.TECH_INDICATORS, key="tech_sel")
+            png = charts.technical_chart(tech, indicators=picked)
             if png:
                 st.image(png, use_container_width=True)
+            else:
+                st.caption("請至少勾選一項指標。")
         else:
             st.warning("查無足夠資料計算技術指標。")
 

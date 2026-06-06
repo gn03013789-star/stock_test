@@ -72,6 +72,19 @@ def _rsi(closes: List[float], n=14):
     return out
 
 
+def _obv(closes: List[float], volumes: List[Optional[float]]):
+    out: List[Optional[float]] = [0.0]
+    for i in range(1, len(closes)):
+        v = volumes[i] or 0.0
+        if closes[i] > closes[i - 1]:
+            out.append(out[-1] + v)
+        elif closes[i] < closes[i - 1]:
+            out.append(out[-1] - v)
+        else:
+            out.append(out[-1])
+    return out
+
+
 def compute(price: PriceData) -> Technical:
     tech = Technical()
     pts = price.points
@@ -82,12 +95,15 @@ def compute(price: PriceData) -> Technical:
     closes = [p.close for p in pts]
     highs = [p.high if p.high is not None else p.close for p in pts]
     lows = [p.low if p.low is not None else p.close for p in pts]
+    volumes = [p.volume for p in pts]
 
     tech.dates = [p.date for p in pts]
     tech.dif, tech.dea, tech.macd_hist = _macd(closes)
     tech.k, tech.d = _kd(highs, lows, closes)
     tech.rsi = _rsi(closes)
-    tech.status.mark_ok("MACD / KD / RSI")
+    if any(v for v in volumes):
+        tech.obv = _obv(closes, volumes)
+    tech.status.mark_ok("MACD / KD / RSI / OBV")
     return tech
 
 
@@ -122,6 +138,13 @@ def insight(tech: Technical) -> str:
         rsi = rsi_vals[-1]
         zone = "超買(>70)" if rsi > 70 else "超賣(<30)" if rsi < 30 else "中性"
         parts.append(f"RSI(14)={rsi:.1f}（{zone}）。")
+
+    # OBV（量能）
+    if tech.obv and len(tech.obv) >= 6:
+        recent, past = tech.obv[-1], tech.obv[-6]
+        flow = "量能流入（偏多）" if recent > past else \
+               "量能流出（偏空）" if recent < past else "量能持平"
+        parts.append(f"OBV 近 5 日{flow}。")
 
     parts.append("※ 技術指標為統計訊號，僅供參考，不構成投資建議。")
     return "".join(parts)

@@ -216,6 +216,8 @@ class Technical:
     d: List[Optional[float]] = field(default_factory=list)
     # RSI
     rsi: List[Optional[float]] = field(default_factory=list)
+    # OBV（能量潮 / 量能）
+    obv: List[Optional[float]] = field(default_factory=list)
     status: SourceStatus = field(default_factory=SourceStatus)
 
 
