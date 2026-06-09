@@ -218,6 +218,9 @@ class Technical:
     rsi: List[Optional[float]] = field(default_factory=list)
     # OBV（能量潮 / 量能）
     obv: List[Optional[float]] = field(default_factory=list)
+    # 文字研判
+    ma_alignment: str = ""               # 均線多空排列
+    kd_divergence: str = ""              # KD 背離偵測
     status: SourceStatus = field(default_factory=SourceStatus)
 
 

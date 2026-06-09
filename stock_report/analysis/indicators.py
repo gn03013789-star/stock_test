@@ -103,8 +103,46 @@ def compute(price: PriceData) -> Technical:
     tech.rsi = _rsi(closes)
     if any(v for v in volumes):
         tech.obv = _obv(closes, volumes)
+    tech.ma_alignment = _ma_alignment(closes)
+    tech.kd_divergence = _kd_divergence(closes, tech.k)
     tech.status.mark_ok("MACD / KD / RSI / OBV")
     return tech
+
+
+def _ma_alignment(closes: List[float], periods=(5, 20, 60)) -> str:
+    """均線多空排列判斷。"""
+    mas = {n: sum(closes[-n:]) / n for n in periods if len(closes) >= n}
+    if len(mas) < 2:
+        return ""
+    ordered = [mas[n] for n in sorted(mas)]  # 由短到長
+    names = "＞".join(f"{n}MA" for n in sorted(mas))
+    if all(ordered[i] > ordered[i + 1] for i in range(len(ordered) - 1)):
+        return f"均線多頭排列（{names}，偏多）"
+    if all(ordered[i] < ordered[i + 1] for i in range(len(ordered) - 1)):
+        rev = "＜".join(f"{n}MA" for n in sorted(mas))
+        return f"均線空頭排列（{rev}，偏空）"
+    return "均線交錯糾結（方向不明）"
+
+
+def _kd_divergence(closes: List[float], k: List[Optional[float]],
+                   lookback: int = 20) -> str:
+    """KD 背離偵測：比較近期前後兩段的價格與 K 值高/低點。"""
+    if len(closes) < lookback:
+        return ""
+    pc = closes[-lookback:]
+    kk = k[-lookback:]
+    if any(v is None for v in kk):
+        return ""
+    half = lookback // 2
+    p1, p2 = max(pc[:half]), max(pc[half:])
+    k1, k2 = max(kk[:half]), max(kk[half:])
+    if p2 > p1 and k2 < k1:
+        return "KD 頂背離（價創高但 KD 走弱，留意轉弱）"
+    l1, l2 = min(pc[:half]), min(pc[half:])
+    lk1, lk2 = min(kk[:half]), min(kk[half:])
+    if l2 < l1 and lk2 > lk1:
+        return "KD 底背離（價創低但 KD 走強，留意反彈）"
+    return "無明顯 KD 背離"
 
 
 def insight(tech: Technical) -> str:
@@ -145,6 +183,10 @@ def insight(tech: Technical) -> str:
         flow = "量能流入（偏多）" if recent > past else \
                "量能流出（偏空）" if recent < past else "量能持平"
         parts.append(f"OBV 近 5 日{flow}。")
+
+    # KD 背離
+    if tech.kd_divergence and tech.kd_divergence != "無明顯 KD 背離":
+        parts.append(tech.kd_divergence + "。")
 
     parts.append("※ 技術指標為統計訊號，僅供參考，不構成投資建議。")
     return "".join(parts)
